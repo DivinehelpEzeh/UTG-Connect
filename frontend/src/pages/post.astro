@@ -1,0 +1,40 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Post" active="hub">
+  <div id="view"></div>
+
+  <script>
+    import { fetchJson, post, auth, apiBase, invalidate } from '../lib/api.js';
+    import { $, esc, qs, dateLabel, spinner, postHeader, postCover, postActions, documentChip, bindPostActions, withBase } from '../lib/ui.js';
+
+    const id = qs('id');
+    const user = auth.user;
+    $('#view').innerHTML = spinner();
+
+    bindPostActions($('#view'), post, { signedIn: !!user, onToggle: () => invalidate('/posts') });
+
+    fetchJson(`/posts/${id}`)
+      .then(({ post: p }) => {
+        $('#view').innerHTML = `
+        <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div class="flex items-center px-3.5 pb-2.5 pt-3.5">${postHeader(p)}</div>
+          <div class="aspect-[4/3] bg-slate-100">${postCover(p)}</div>
+          <div class="p-3.5">
+            ${postActions(p, p.startsAt ? `${apiBase}/posts/${p.id}/calendar.ics` : null)}
+            <h1 class="mt-2.5 text-lg font-extrabold leading-snug text-slate-900">${esc(p.title)}</h1>
+            ${p.body ? `<p class="mt-1.5 whitespace-pre-line text-sm text-slate-700">${esc(p.body)}</p>` : ''}
+            ${documentChip(p)}
+            <dl class="mt-3 space-y-1 text-xs text-slate-500">
+              ${p.startsAt ? `<div><dt class="inline font-medium">When:</dt> <dd class="inline">${esc(dateLabel(p.startsAt))}</dd></div>` : ''}
+              ${p.location ? `<div><dt class="inline font-medium">Where:</dt> <dd class="inline">${esc(p.location)}</dd></div>` : ''}
+            </dl>
+          </div>
+        </div>`;
+      })
+      .catch((e) => {
+        $('#view').innerHTML = `<p class="py-8 text-center text-sm text-red-600">${esc(e.message)}</p>`;
+      });
+  </script>
+</Base>

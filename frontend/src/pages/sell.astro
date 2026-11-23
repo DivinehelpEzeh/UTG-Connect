@@ -1,0 +1,170 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="New listing" active="market">
+  <h1 class="mb-1 text-lg font-semibold">List something</h1>
+  <p class="mb-4 text-sm text-slate-500">Zero commission — you keep the whole price. A photo is required; listings without one barely get looked at.</p>
+
+  <div id="become-seller" class="hidden rounded-xl border border-slate-200 bg-white p-5 text-center">
+    <p class="text-sm text-slate-600">You're set up to browse and buy. Turn on selling to list your own items — zero commission, you keep the whole price.</p>
+    <button id="become-seller-btn" class="mt-3 rounded-lg bg-navy px-4 py-2 text-sm font-semibold text-white hover:bg-navy-deep">Become a seller</button>
+  </div>
+
+  <div id="not-for-admin" class="hidden rounded-xl border border-slate-200 bg-white p-5 text-center text-sm text-slate-600">
+    Admin accounts run the platform and don't sell on the marketplace.
+  </div>
+
+  <form id="form" class="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+    <div>
+      <label class="text-sm font-medium">Section</label>
+      <select name="section" id="section" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="goods">Goods — a physical item</option>
+        <option value="services">Services — tutoring, braiding, printing, DJing…</option>
+        <option value="rent">Rent &amp; Borrow — short-term, comes back to you</option>
+      </select>
+    </div>
+
+    <div>
+      <label class="text-sm font-medium">Category</label>
+      <select name="category" id="category" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></select>
+      <p class="mt-1 text-xs text-slate-500">Picked at listing time and enforced, so a charger never turns up in the food feed.</p>
+    </div>
+
+    <input name="title" required placeholder="Title" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    <textarea name="description" rows="3" placeholder="Details buyers will ask about anyway" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+
+    <div class="flex gap-2">
+      <input name="price" type="number" min="0" required placeholder="Price (GMD)" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <select name="priceUnit" id="priceUnit" class="rounded-lg border border-slate-300 px-2 py-2 text-sm">
+        <option value="item">per item</option>
+        <option value="hour">per hour</option>
+        <option value="day">per day</option>
+        <option value="week">per week</option>
+      </select>
+    </div>
+
+    <div id="deposit-row" style="display:none">
+      <label class="text-sm font-medium">Refundable deposit (GMD)</label>
+      <input name="deposit" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <p class="mt-1 text-xs text-slate-500" id="deposit-note"></p>
+    </div>
+
+    <div>
+      <label class="text-sm font-medium">Photo</label>
+      <input type="file" id="photo-input" accept="image/*" class="mt-1 block w-full text-sm" />
+      <div id="photo-preview" class="mt-2 hidden">
+        <img class="h-24 w-24 rounded-lg border border-slate-200 object-cover" alt="" />
+      </div>
+      <p class="mt-1 text-xs text-slate-500">Listings without a photo barely get looked at.</p>
+    </div>
+
+    <div>
+      <label class="text-sm font-medium">Pickup point</label>
+      <select name="pickupPoint" id="pickup" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></select>
+    </div>
+
+    <div>
+      <label class="text-sm font-medium">Schedule as a drop (optional)</label>
+      <input name="dropsAt" type="datetime-local" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <p class="mt-1 text-xs text-slate-500">Set a time and the listing stays hidden behind a public countdown until then.</p>
+    </div>
+
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" name="acceptsOffers" checked class="rounded" /> Let buyers propose their own price
+    </label>
+
+    <button class="w-full rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-medium text-white">Post listing</button>
+    <p id="error" class="text-sm text-red-600"></p>
+  </form>
+
+  <script>
+    import { get, post, fetchJson, auth, upload, invalidate } from '../lib/api.js';
+    import { $, esc, toast, withBase } from '../lib/ui.js';
+
+    const me = auth.user;
+    if (!me) location.href = withBase('/login');
+
+    // Council sells without a separate opt-in; a plain student needs to have
+    // already flipped the seller switch; admin never sells at all.
+    const canSell = me && (me.role === 'council' || (me.role === 'student' && me.isSeller));
+
+    if (me?.role === 'admin') {
+      $('#form').classList.add('hidden');
+      $('#not-for-admin').classList.remove('hidden');
+    } else if (me && !canSell) {
+      $('#form').classList.add('hidden');
+      $('#become-seller').classList.remove('hidden');
+      $('#become-seller-btn').addEventListener('click', async () => {
+        await post('/me/become-seller');
+        const { user: fresh } = await fetchJson('/auth/me');
+        auth.signIn(auth.token, fresh);
+        $('#become-seller').classList.add('hidden');
+        $('#form').classList.remove('hidden');
+        toast('Selling is on — list away.');
+      });
+    }
+
+    let imageUrl = null;
+    $('#photo-input').addEventListener('change', async () => {
+      const file = $('#photo-input').files[0];
+      if (!file) return;
+      try {
+        const res = await upload(file);
+        imageUrl = res.url;
+        $('#photo-preview').classList.remove('hidden');
+        $('#photo-preview img').src = imageUrl;
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+
+    let meta = null;
+    get('/listings/meta').then(({ data }) => {
+      meta = data;
+      $('#pickup').innerHTML = data.pickupPoints.map((p) => `<option>${esc(p)}</option>`).join('');
+      syncSection();
+    });
+
+    function syncSection() {
+      if (!meta) return;
+      const section = $('#section').value;
+      $('#category').innerHTML = meta.categories[section].map((c) => `<option value="${esc(c)}">${esc(c.replace(/-/g, ' '))}</option>`).join('');
+      $('#priceUnit').value = section === 'rent' ? 'day' : section === 'services' ? 'item' : 'item';
+      $('#deposit-row').style.display = section === 'rent' ? 'block' : 'none';
+      $('#deposit-note').textContent = `Anything priced at ${meta.depositThreshold} GMD or above must carry a deposit — the platform holds it, not the lender, and releases it once the item comes back in good condition.`;
+    }
+    $('#section').addEventListener('change', syncSection);
+
+    $('#form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('#error').textContent = '';
+      if (!imageUrl) {
+        $('#error').textContent = 'Add a photo first.';
+        return;
+      }
+      const f = new FormData(e.target);
+      const body = {
+        section: f.get('section'),
+        category: f.get('category'),
+        title: f.get('title'),
+        description: f.get('description'),
+        price: Number(f.get('price')),
+        priceUnit: f.get('priceUnit'),
+        deposit: Number(f.get('deposit') || 0),
+        imageUrl,
+        pickupPoint: f.get('pickupPoint'),
+        acceptsOffers: f.get('acceptsOffers') === 'on',
+        dropsAt: f.get('dropsAt') ? new Date(f.get('dropsAt')).toISOString() : null,
+      };
+      try {
+        const res = await post('/listings', body);
+        invalidate('/listings');
+        toast('Listed. Your followers were notified.');
+        location.href = withBase(`/listing?id=${res.listing.id}`);
+      } catch (err) {
+        $('#error').textContent = err.message;
+      }
+    });
+  </script>
+</Base>
