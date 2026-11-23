@@ -34,4 +34,4 @@ services:
       # The GitHub Pages origin(s) allowed to call this API. Update if you fork
       # the repo or rename it — CORS checks the exact origin, not the path.
       - key: CORS_ORIGINS
-        value: https://sirret.github.io
+        value: https://utg-connect.vercel.app
